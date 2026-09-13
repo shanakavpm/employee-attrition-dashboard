@@ -1,0 +1,5 @@
+group,records,predicted_high_risk_rate,recall,false_positive_rate,interpretation
+21 to 30,149,0.4899328859060403,0.7777777777777778,0.22077922077922077,Review group differences
+31 to 40,121,0.4380165289256198,0.8666666666666667,0.18421052631578946,Review group differences
+41 to 50,24,0.25,0.625,0.0625,Review group differences
+51 to 60,4,0.25,0.25,,Small group: interpret cautiously

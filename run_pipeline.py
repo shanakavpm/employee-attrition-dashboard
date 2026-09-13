@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 
-from src.config import OUTPUT_DIR, PROCESSED_DATA_PATH, RAW_DATA_PATH, TARGET_COLUMN
+from src.config import FIGURE_DIR, OUTPUT_DIR, PROCESSED_DATA_PATH, RAW_DATA_PATH, TARGET_COLUMN
 from src.data import create_features, load_and_prepare_data
 from src.modeling import fairness_by_group, global_feature_importance, train_and_evaluate
+from src.reporting import generate_evidence_figures
 
 
 def main() -> None:
@@ -24,6 +25,7 @@ def main() -> None:
     global_feature_importance(result).to_csv(OUTPUT_DIR / "feature_importance.csv", index=False)
     fairness_by_group(result, frame, "gender").to_csv(OUTPUT_DIR / "fairness_by_gender.csv", index=False)
     fairness_by_group(result, frame, "age_group").to_csv(OUTPUT_DIR / "fairness_by_age_group.csv", index=False)
+    generate_evidence_figures(frame, result, FIGURE_DIR).to_csv(OUTPUT_DIR / "figure_index.csv", index=False)
 
     with (OUTPUT_DIR / "run_summary.json").open("w", encoding="utf-8") as output_file:
         json.dump(

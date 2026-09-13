@@ -33,6 +33,27 @@ def _standardise_text(value: object) -> object:
     return value
 
 
+def _standardise_category_labels(frame: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Merge case-only variants while retaining the most common source label."""
+    result = frame.copy()
+    changed_values = 0
+    for column in result.select_dtypes(include="object").columns:
+        values = result[column]
+        non_missing = values.dropna()
+        if non_missing.empty:
+            continue
+        keys = non_missing.astype(str).str.casefold()
+        canonical_labels = (
+            pd.DataFrame({"key": keys, "label": non_missing})
+            .groupby("key")["label"]
+            .agg(lambda labels: labels.value_counts().index[0])
+        )
+        replacement = values.astype(str).str.casefold().map(canonical_labels)
+        changed_values += int((values.notna() & (values != replacement)).sum())
+        result[column] = replacement.where(values.notna(), values)
+    return result, changed_values
+
+
 def load_and_prepare_data(source_path: Path) -> PreparedData:
     """Load the original Excel file and return validated, analysis-ready data.
 
@@ -45,6 +66,7 @@ def load_and_prepare_data(source_path: Path) -> PreparedData:
     raw_frame = pd.read_excel(source_path)
     frame = raw_frame.rename(columns=_standardise_name).copy()
     frame = frame.map(_standardise_text)
+    frame, category_values_standardised = _standardise_category_labels(frame)
     rows_before = len(frame)
 
     duplicate_count = int(frame.duplicated().sum())
@@ -77,6 +99,7 @@ def load_and_prepare_data(source_path: Path) -> PreparedData:
             {"check": "Rows loaded", "value": rows_before},
             {"check": "Duplicate rows removed", "value": duplicate_count},
             {"check": "Invalid attrition values removed", "value": invalid_target_count},
+            {"check": "Inconsistent category labels standardised", "value": category_values_standardised},
             {"check": "Missing values before treatment", "value": missing_before},
             {"check": "Missing values after treatment", "value": missing_after},
             {"check": "Final records", "value": len(frame)},

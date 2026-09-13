@@ -13,6 +13,7 @@ RAW_DATA_PATH = (
 )
 PROCESSED_DATA_PATH = PROJECT_ROOT / "data" / "processed" / "employee_attrition_cleaned.csv"
 OUTPUT_DIR = PROJECT_ROOT / "outputs"
+FIGURE_DIR = PROJECT_ROOT / "figures"
 
 TARGET_COLUMN = "attrition"
 ID_COLUMN = "id"

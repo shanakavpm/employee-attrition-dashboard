@@ -1,0 +1,7 @@
+file,purpose
+fig_01_attrition_distribution.png,Employee stay and leave distribution
+fig_02_attrition_by_department.png,Department-level attrition comparison
+fig_03_attrition_by_job_satisfaction.png,Job satisfaction and attrition comparison
+fig_04_model_comparison.png,Model selection evidence
+fig_05_feature_importance.png,Model explanation evidence
+fig_06_fairness_by_gender.png,Gender-level fairness diagnostic

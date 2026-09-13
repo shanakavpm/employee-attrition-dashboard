@@ -1,0 +1,3 @@
+group,records,predicted_high_risk_rate,recall,false_positive_rate,interpretation
+Female,173,0.3930635838150289,0.7384615384615385,0.18518518518518517,Review group differences
+Male,125,0.52,0.828125,0.19672131147540983,Review group differences

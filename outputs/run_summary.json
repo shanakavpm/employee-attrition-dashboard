@@ -1,0 +1,6 @@
+{
+  "best_model": "Logistic Regression",
+  "selection_metric": "hold-out F1 score",
+  "records": 1191,
+  "features": 33
+}
