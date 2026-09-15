@@ -6,7 +6,7 @@ import json
 
 from src.config import FIGURE_DIR, OUTPUT_DIR, PROCESSED_DATA_PATH, RAW_DATA_PATH, TARGET_COLUMN
 from src.data import create_features, load_and_prepare_data
-from src.modeling import fairness_by_group, global_feature_importance, train_and_evaluate
+from src.modeling import fairness_by_group, global_feature_importance, preprocessing_ablation, train_and_evaluate
 from src.reporting import generate_evidence_figures
 
 
@@ -22,6 +22,7 @@ def main() -> None:
 
     result = train_and_evaluate(frame, TARGET_COLUMN)
     result.metrics.to_csv(OUTPUT_DIR / "model_metrics.csv", index=False)
+    preprocessing_ablation(frame, TARGET_COLUMN).to_csv(OUTPUT_DIR / "preprocessing_ablation.csv", index=False)
     global_feature_importance(result).to_csv(OUTPUT_DIR / "feature_importance.csv", index=False)
     fairness_by_group(result, frame, "gender").to_csv(OUTPUT_DIR / "fairness_by_gender.csv", index=False)
     fairness_by_group(result, frame, "age_group").to_csv(OUTPUT_DIR / "fairness_by_age_group.csv", index=False)

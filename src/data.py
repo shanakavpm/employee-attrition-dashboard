@@ -109,6 +109,29 @@ def load_and_prepare_data(source_path: Path) -> PreparedData:
     return PreparedData(frame=frame.reset_index(drop=True), quality_report=quality_report)
 
 
+def load_dashboard_data(raw_path: Path, processed_path: Path) -> PreparedData:
+    """Load raw data when available, otherwise use the reproducible processed CSV.
+
+    The fallback allows a hosted Streamlit dashboard to run when a deployment
+    intentionally ships the generated dataset rather than the source workbook.
+    Pipeline runs should still call ``load_and_prepare_data`` against raw data.
+    """
+    if raw_path.exists():
+        return load_and_prepare_data(raw_path)
+    if not processed_path.exists():
+        raise FileNotFoundError("Neither the raw workbook nor the processed dashboard CSV is available.")
+
+    frame = pd.read_csv(processed_path)
+    quality_report = pd.DataFrame(
+        [
+            {"check": "Dashboard data source", "value": "Processed CSV fallback"},
+            {"check": "Records loaded", "value": len(frame)},
+            {"check": "Columns loaded", "value": len(frame.columns)},
+        ]
+    )
+    return PreparedData(frame=frame, quality_report=quality_report)
+
+
 def create_features(frame: pd.DataFrame) -> pd.DataFrame:
     """Add transparent dashboard fields without altering the source variables.
 

@@ -66,6 +66,23 @@ def _preprocessor(features: pd.DataFrame, scale_numeric: bool) -> ColumnTransfor
     )
 
 
+def _logistic_pipeline(features: pd.DataFrame, scale_numeric: bool = True) -> Pipeline:
+    """Build the transparent classifier used for model selection and ablation."""
+    return Pipeline(
+        steps=[
+            ("preprocessor", _preprocessor(features, scale_numeric=scale_numeric)),
+            (
+                "model",
+                LogisticRegression(
+                    max_iter=2_000,
+                    class_weight="balanced",
+                    random_state=RANDOM_STATE,
+                ),
+            ),
+        ]
+    )
+
+
 def build_candidate_models(features: pd.DataFrame) -> dict[str, Pipeline]:
     """Create transparent baseline and non-linear candidate models.
 
@@ -73,19 +90,7 @@ def build_candidate_models(features: pd.DataFrame) -> dict[str, Pipeline]:
     transformations remain inside the pipeline, preventing train-test leakage.
     """
     return {
-        "Logistic Regression": Pipeline(
-            steps=[
-                ("preprocessor", _preprocessor(features, scale_numeric=True)),
-                (
-                    "model",
-                    LogisticRegression(
-                        max_iter=2_000,
-                        class_weight="balanced",
-                        random_state=RANDOM_STATE,
-                    ),
-                ),
-            ]
-        ),
+        "Logistic Regression": _logistic_pipeline(features),
         "Random Forest": Pipeline(
             steps=[
                 ("preprocessor", _preprocessor(features, scale_numeric=False)),
@@ -102,6 +107,28 @@ def build_candidate_models(features: pd.DataFrame) -> dict[str, Pipeline]:
             ]
         ),
     }
+
+
+def preprocessing_ablation(frame: pd.DataFrame, target_column: str) -> pd.DataFrame:
+    """Measure the effect of numeric standardisation on the logistic pipeline."""
+    features = model_features(frame)
+    target = frame[target_column]
+    x_train, x_test, y_train, y_test = train_test_split(
+        features, target, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=target
+    )
+    cv = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=RANDOM_STATE)
+    rows: list[dict[str, float | str | bool]] = []
+    for variant, scale_numeric in (("With numeric standardisation", True), ("Without numeric standardisation", False)):
+        pipeline = _logistic_pipeline(x_train, scale_numeric=scale_numeric)
+        cv_result = cross_validate(pipeline, x_train, y_train, cv=cv, scoring={"f1": "f1", "roc_auc": "roc_auc"}, n_jobs=-1)
+        pipeline.fit(x_train, y_train)
+        row = _metric_row(variant, pipeline, x_test, y_test)
+        row["numeric_standardisation"] = scale_numeric
+        row["cv_f1_mean"] = float(np.mean(cv_result["test_f1"]))
+        row["cv_f1_std"] = float(np.std(cv_result["test_f1"], ddof=1))
+        row["cv_roc_auc_mean"] = float(np.mean(cv_result["test_roc_auc"]))
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 
 def _metric_row(name: str, pipeline: Pipeline, x_test: pd.DataFrame, y_test: pd.Series) -> dict[str, float | str]:
