@@ -6,10 +6,10 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from sklearn.base import clone
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
-from sklearn.inspection import permutation_importance
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
@@ -19,17 +19,18 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import StratifiedKFold, cross_validate, train_test_split
+from sklearn.model_selection import StratifiedKFold, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from src.config import CV_FOLDS, MIN_GROUP_SIZE, RANDOM_STATE, TEST_SIZE
 from src.data import model_features
 
-# Streamlit Community Cloud runs inside a resource-constrained container.  Keeping
-# model evaluation single-process avoids joblib worker failures there; the dataset
-# is small enough that the added latency is negligible for an interactive app.
-INTERACTIVE_N_JOBS = 1
+# Streamlit Community Cloud's current Python 3.14 image can fail inside
+# scikit-learn's joblib wrapper, even when ``n_jobs=1``. Dashboard evaluation is
+# intentionally serial, avoiding that wrapper altogether. The dataset is small,
+# so the latency remains suitable for an interactive app.
+PERMUTATION_REPEATS = 15
 
 
 @dataclass
@@ -106,7 +107,7 @@ def build_candidate_models(features: pd.DataFrame) -> dict[str, Pipeline]:
                         min_samples_leaf=3,
                         class_weight="balanced",
                         random_state=RANDOM_STATE,
-                        n_jobs=INTERACTIVE_N_JOBS,
+                        n_jobs=1,
                     ),
                 ),
             ]
@@ -125,20 +126,13 @@ def preprocessing_ablation(frame: pd.DataFrame, target_column: str) -> pd.DataFr
     rows: list[dict[str, float | str | bool]] = []
     for variant, scale_numeric in (("With numeric standardisation", True), ("Without numeric standardisation", False)):
         pipeline = _logistic_pipeline(x_train, scale_numeric=scale_numeric)
-        cv_result = cross_validate(
-            pipeline,
-            x_train,
-            y_train,
-            cv=cv,
-            scoring={"f1": "f1", "roc_auc": "roc_auc"},
-            n_jobs=INTERACTIVE_N_JOBS,
-        )
+        cv_result = _serial_cross_validation(pipeline, x_train, y_train, cv)
         pipeline.fit(x_train, y_train)
         row = _metric_row(variant, pipeline, x_test, y_test)
         row["numeric_standardisation"] = scale_numeric
-        row["cv_f1_mean"] = float(np.mean(cv_result["test_f1"]))
-        row["cv_f1_std"] = float(np.std(cv_result["test_f1"], ddof=1))
-        row["cv_roc_auc_mean"] = float(np.mean(cv_result["test_roc_auc"]))
+        row["cv_f1_mean"] = float(np.mean(cv_result["f1"]))
+        row["cv_f1_std"] = float(np.std(cv_result["f1"], ddof=1))
+        row["cv_roc_auc_mean"] = float(np.mean(cv_result["roc_auc"]))
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -157,6 +151,25 @@ def _metric_row(name: str, pipeline: Pipeline, x_test: pd.DataFrame, y_test: pd.
     }
 
 
+def _serial_cross_validation(
+    pipeline: Pipeline, features: pd.DataFrame, target: pd.Series, cv: StratifiedKFold
+) -> dict[str, list[float]]:
+    """Evaluate folds without joblib, which is more reliable in hosted sessions."""
+    scores: dict[str, list[float]] = {"f1": [], "roc_auc": []}
+    for train_index, validation_index in cv.split(features, target):
+        candidate = clone(pipeline)
+        x_train = features.iloc[train_index]
+        x_validation = features.iloc[validation_index]
+        y_train = target.iloc[train_index]
+        y_validation = target.iloc[validation_index]
+        candidate.fit(x_train, y_train)
+        predictions = candidate.predict(x_validation)
+        probabilities = candidate.predict_proba(x_validation)[:, 1]
+        scores["f1"].append(float(f1_score(y_validation, predictions, zero_division=0)))
+        scores["roc_auc"].append(float(roc_auc_score(y_validation, probabilities)))
+    return scores
+
+
 def train_and_evaluate(frame: pd.DataFrame, target_column: str) -> AnalysisResult:
     """Train both models and select the best by hold-out F1 score.
 
@@ -173,25 +186,17 @@ def train_and_evaluate(frame: pd.DataFrame, target_column: str) -> AnalysisResul
         stratify=target,
     )
     candidates = build_candidate_models(x_train)
-    scoring = {"accuracy": "accuracy", "precision": "precision", "recall": "recall", "f1": "f1", "roc_auc": "roc_auc"}
     cv = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=RANDOM_STATE)
     rows: list[dict[str, float | str]] = []
 
     for name, pipeline in candidates.items():
-        cv_result = cross_validate(
-            pipeline,
-            x_train,
-            y_train,
-            cv=cv,
-            scoring=scoring,
-            n_jobs=INTERACTIVE_N_JOBS,
-        )
+        cv_result = _serial_cross_validation(pipeline, x_train, y_train, cv)
         pipeline.fit(x_train, y_train)
         row = _metric_row(name, pipeline, x_test, y_test)
-        row["cv_f1_mean"] = float(np.mean(cv_result["test_f1"]))
-        row["cv_f1_std"] = float(np.std(cv_result["test_f1"], ddof=1))
-        row["cv_roc_auc_mean"] = float(np.mean(cv_result["test_roc_auc"]))
-        row["cv_roc_auc_std"] = float(np.std(cv_result["test_roc_auc"], ddof=1))
+        row["cv_f1_mean"] = float(np.mean(cv_result["f1"]))
+        row["cv_f1_std"] = float(np.std(cv_result["f1"], ddof=1))
+        row["cv_roc_auc_mean"] = float(np.mean(cv_result["roc_auc"]))
+        row["cv_roc_auc_std"] = float(np.std(cv_result["roc_auc"], ddof=1))
         rows.append(row)
 
     metrics = pd.DataFrame(rows).sort_values("f1", ascending=False).reset_index(drop=True)
@@ -248,23 +253,28 @@ def fairness_by_group(result: AnalysisResult, source_frame: pd.DataFrame, group_
 
 
 def global_feature_importance(result: AnalysisResult) -> pd.DataFrame:
-    """Return model-agnostic feature importance from held-out permutation tests."""
+    """Return model-agnostic feature importance from serial held-out permutations."""
     best_model = result.models[result.best_model_name]
-    importance = permutation_importance(
-        best_model,
-        result.x_test,
-        result.y_test,
-        scoring="f1",
-        n_repeats=15,
-        random_state=RANDOM_STATE,
-        n_jobs=INTERACTIVE_N_JOBS,
-    )
+    baseline_f1 = f1_score(result.y_test, best_model.predict(result.x_test), zero_division=0)
+    random_generator = np.random.default_rng(RANDOM_STATE)
+    importance_values: list[np.ndarray] = []
+    for feature in result.x_test.columns:
+        decreases: list[float] = []
+        for _ in range(PERMUTATION_REPEATS):
+            shuffled = result.x_test.copy()
+            shuffled[feature] = random_generator.permutation(shuffled[feature].to_numpy())
+            shuffled_f1 = f1_score(result.y_test, best_model.predict(shuffled), zero_division=0)
+            decreases.append(float(baseline_f1 - shuffled_f1))
+        importance_values.append(np.asarray(decreases))
+
+    importance_mean = np.asarray([values.mean() for values in importance_values])
+    importance_std = np.asarray([values.std() for values in importance_values])
     return (
         pd.DataFrame(
             {
                 "feature": result.x_test.columns,
-                "importance_mean": importance.importances_mean,
-                "importance_std": importance.importances_std,
+                "importance_mean": importance_mean,
+                "importance_std": importance_std,
             }
         )
         .sort_values("importance_mean", ascending=False)

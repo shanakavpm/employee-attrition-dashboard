@@ -88,7 +88,7 @@ with overview_left:
     stay_leave = filtered["attrition_label"].value_counts().rename_axis("status").reset_index(name="employees")
     st.plotly_chart(
         px.pie(stay_leave, names="status", values="employees", hole=0.55, title="Stayed and left"),
-        use_container_width=True,
+        width="stretch",
     )
 with overview_right:
     department_rate = (
@@ -98,7 +98,7 @@ with overview_right:
     )
     st.plotly_chart(
         px.bar(department_rate, x="department", y=TARGET_COLUMN, title="Attrition rate by department", labels={TARGET_COLUMN: "Attrition rate", "department": "Department"}).update_yaxes(tickformat=".0%"),
-        use_container_width=True,
+        width="stretch",
     )
 
 st.subheader("Attrition factors")
@@ -107,7 +107,7 @@ with factor_left:
     overtime_rate = filtered.groupby("overtime", as_index=False)[TARGET_COLUMN].mean()
     st.plotly_chart(
         px.bar(overtime_rate, x="overtime", y=TARGET_COLUMN, title="Attrition rate by overtime", labels={TARGET_COLUMN: "Attrition rate", "overtime": "Overtime"}).update_yaxes(tickformat=".0%"),
-        use_container_width=True,
+        width="stretch",
     )
 with factor_right:
     satisfaction_rate = (
@@ -117,14 +117,14 @@ with factor_right:
     )
     st.plotly_chart(
         px.bar(satisfaction_rate, x="job_satisfaction", y=TARGET_COLUMN, title="Attrition rate by job satisfaction", labels={TARGET_COLUMN: "Attrition rate", "job_satisfaction": "Job satisfaction"}).update_yaxes(tickformat=".0%"),
-        use_container_width=True,
+        width="stretch",
     )
 
 st.subheader("Prediction model")
 st.write(f"Selected model: **{analysis.best_model_name}**. The model is selected using hold-out F1 score, which balances missed leavers and false alerts.")
 st.dataframe(
     analysis.metrics.style.format({column: "{:.3f}" for column in analysis.metrics.columns if column != "model"}),
-    use_container_width=True,
+    width="stretch",
     hide_index=True,
 )
 
@@ -150,7 +150,7 @@ st.caption("Risk estimates are shown only for the held-out test set. They suppor
 importance = global_feature_importance(analysis).head(12).sort_values("importance_mean")
 st.plotly_chart(
     px.bar(importance, x="importance_mean", y="feature", orientation="h", error_x="importance_std", title="Global feature importance", labels={"importance_mean": "Decrease in F1 when shuffled", "feature": "Feature"}),
-    use_container_width=True,
+    width="stretch",
 )
 st.caption("Permutation importance describes predictive association in this dataset. It does not prove that a factor causes attrition.")
 
