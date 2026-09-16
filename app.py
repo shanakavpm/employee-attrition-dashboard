@@ -47,6 +47,15 @@ def percentage(value: float) -> str:
     return f"{value:.1%}"
 
 
+FILTER_KEYS = ("department_filter", "gender_filter", "age_filter")
+
+
+def clear_filters() -> None:
+    """Reset sidebar filters through their stable Streamlit state keys."""
+    for key in FILTER_KEYS:
+        st.session_state[key] = []
+
+
 def prediction_review_frame(source_frame: pd.DataFrame, result) -> pd.DataFrame:
     """Join independent test-set predictions to dashboard fields for review."""
     review_columns = ["id", "department", "jobtitle", "gender", "age_group", "attrition_label"]
@@ -63,9 +72,17 @@ st.caption("Decision-support prototype using the Saudi Employee Attrition Datase
 
 with st.sidebar:
     st.header("Filters")
-    department_filter = st.multiselect("Department", sorted(frame["department"].unique()))
-    gender_filter = st.multiselect("Gender", sorted(frame["gender"].unique()))
-    age_filter = st.multiselect("Age group", sorted(frame["age_group"].unique()))
+    st.button(
+        "Clear all filters",
+        on_click=clear_filters,
+        disabled=not any(st.session_state.get(key) for key in FILTER_KEYS),
+        width="stretch",
+    )
+    department_filter = st.multiselect(
+        "Department", sorted(frame["department"].unique()), key="department_filter"
+    )
+    gender_filter = st.multiselect("Gender", sorted(frame["gender"].unique()), key="gender_filter")
+    age_filter = st.multiselect("Age group", sorted(frame["age_group"].unique()), key="age_filter")
     risk_threshold = st.slider("High-risk threshold", min_value=0.30, max_value=0.80, value=0.50, step=0.05)
 
 filtered = apply_filters(frame, department_filter, gender_filter, age_filter)
