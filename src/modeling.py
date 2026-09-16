@@ -26,6 +26,11 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from src.config import CV_FOLDS, MIN_GROUP_SIZE, RANDOM_STATE, TEST_SIZE
 from src.data import model_features
 
+# Streamlit Community Cloud runs inside a resource-constrained container.  Keeping
+# model evaluation single-process avoids joblib worker failures there; the dataset
+# is small enough that the added latency is negligible for an interactive app.
+INTERACTIVE_N_JOBS = 1
+
 
 @dataclass
 class AnalysisResult:
@@ -101,7 +106,7 @@ def build_candidate_models(features: pd.DataFrame) -> dict[str, Pipeline]:
                         min_samples_leaf=3,
                         class_weight="balanced",
                         random_state=RANDOM_STATE,
-                        n_jobs=-1,
+                        n_jobs=INTERACTIVE_N_JOBS,
                     ),
                 ),
             ]
@@ -120,7 +125,14 @@ def preprocessing_ablation(frame: pd.DataFrame, target_column: str) -> pd.DataFr
     rows: list[dict[str, float | str | bool]] = []
     for variant, scale_numeric in (("With numeric standardisation", True), ("Without numeric standardisation", False)):
         pipeline = _logistic_pipeline(x_train, scale_numeric=scale_numeric)
-        cv_result = cross_validate(pipeline, x_train, y_train, cv=cv, scoring={"f1": "f1", "roc_auc": "roc_auc"}, n_jobs=-1)
+        cv_result = cross_validate(
+            pipeline,
+            x_train,
+            y_train,
+            cv=cv,
+            scoring={"f1": "f1", "roc_auc": "roc_auc"},
+            n_jobs=INTERACTIVE_N_JOBS,
+        )
         pipeline.fit(x_train, y_train)
         row = _metric_row(variant, pipeline, x_test, y_test)
         row["numeric_standardisation"] = scale_numeric
@@ -166,7 +178,14 @@ def train_and_evaluate(frame: pd.DataFrame, target_column: str) -> AnalysisResul
     rows: list[dict[str, float | str]] = []
 
     for name, pipeline in candidates.items():
-        cv_result = cross_validate(pipeline, x_train, y_train, cv=cv, scoring=scoring, n_jobs=-1)
+        cv_result = cross_validate(
+            pipeline,
+            x_train,
+            y_train,
+            cv=cv,
+            scoring=scoring,
+            n_jobs=INTERACTIVE_N_JOBS,
+        )
         pipeline.fit(x_train, y_train)
         row = _metric_row(name, pipeline, x_test, y_test)
         row["cv_f1_mean"] = float(np.mean(cv_result["test_f1"]))
@@ -238,7 +257,7 @@ def global_feature_importance(result: AnalysisResult) -> pd.DataFrame:
         scoring="f1",
         n_repeats=15,
         random_state=RANDOM_STATE,
-        n_jobs=-1,
+        n_jobs=INTERACTIVE_N_JOBS,
     )
     return (
         pd.DataFrame(
