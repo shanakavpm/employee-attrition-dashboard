@@ -156,9 +156,12 @@ with risk_left:
     st.metric("High-risk test records", high_risk_count)
     st.caption(f"Threshold: {risk_threshold:.0%}")
 with risk_right:
+    # Keep classification probabilities on 0–1; scale only the displayed table.
+    displayed_risk_review = filtered_risk_review.sort_values("attrition_risk", ascending=False).copy()
+    displayed_risk_review["attrition_risk"] *= 100
     st.dataframe(
-        filtered_risk_review.sort_values("attrition_risk", ascending=False),
-        column_config={"attrition_risk": st.column_config.ProgressColumn("Predicted risk", min_value=0.0, max_value=1.0, format="%.0f%%")},
+        displayed_risk_review,
+        column_config={"attrition_risk": st.column_config.ProgressColumn("Predicted risk", min_value=0.0, max_value=100.0, format="%.1f%%")},
         width="stretch",
         hide_index=True,
     )
@@ -169,9 +172,14 @@ st.plotly_chart(
     px.bar(importance, x="importance_mean", y="feature", orientation="h", error_x="importance_std", title="Global feature importance", labels={"importance_mean": "Decrease in F1 when shuffled", "feature": "Feature"}),
     width="stretch",
 )
-st.caption("Permutation importance describes predictive association in this dataset. It does not prove that a factor causes attrition.")
+st.caption(f"Feature importance: {analysis.best_model_name}, evaluated on all {len(analysis.x_test):,} held-out test records, independent of sidebar filters. Permutation importance describes predictive association, not causation.")
 
 st.subheader("Fairness and responsible use")
+st.caption(
+    f"Fairness tables: all {len(analysis.x_test):,} held-out test records, "
+    f"using {analysis.best_model_name} at the model’s default 50% decision threshold. "
+    "Sidebar filters and the high-risk threshold slider do not change these tables."
+)
 fairness_tabs = st.tabs(["Gender", "Age group", "Data quality"])
 with fairness_tabs[0]:
     st.dataframe(fairness_by_group(analysis, frame, "gender").style.format({"predicted_high_risk_rate": "{:.1%}", "recall": "{:.1%}", "false_positive_rate": "{:.1%}"}), width="stretch", hide_index=True)
