@@ -42,7 +42,6 @@ class AnalysisResult:
     best_model_name: str
     x_train: pd.DataFrame
     x_test: pd.DataFrame
-    y_train: pd.Series
     y_test: pd.Series
     probabilities: pd.Series
     predictions: pd.Series
@@ -210,7 +209,6 @@ def train_and_evaluate(frame: pd.DataFrame, target_column: str) -> AnalysisResul
         best_model_name=best_model_name,
         x_train=x_train,
         x_test=x_test,
-        y_train=y_train,
         y_test=y_test,
         probabilities=probabilities,
         predictions=predictions,

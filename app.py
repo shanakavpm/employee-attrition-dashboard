@@ -42,11 +42,6 @@ def apply_filters(frame: pd.DataFrame, departments: list[str], genders: list[str
     return filtered
 
 
-def percentage(value: float) -> str:
-    """Format a decimal as a dashboard percentage."""
-    return f"{value:.1%}"
-
-
 FILTER_KEYS = ("department_filter", "gender_filter", "age_filter")
 
 
@@ -93,7 +88,7 @@ st.subheader("Overview")
 metric_1, metric_2, metric_3, metric_4 = st.columns(4)
 metric_1.metric("Employees reviewed", f"{total_employees:,}")
 metric_2.metric("Employees who left", f"{left_employees:,}")
-metric_3.metric("Attrition rate", percentage(attrition_rate))
+metric_3.metric("Attrition rate", f"{attrition_rate:.1%}")
 metric_4.metric("Employees who stayed", f"{total_employees - left_employees:,}")
 
 if filtered.empty:
