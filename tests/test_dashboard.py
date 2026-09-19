@@ -27,6 +27,12 @@ class DashboardTests(unittest.TestCase):
             app = AppTest.from_file(str(PROJECT_ROOT / "app.py"), default_timeout=30).run()
             self.assertFalse(app.exception)
             self.assertEqual(app.metric[0].value, "1,191")
+            self.assertEqual(len(app.sidebar.slider), 1)
+            explanation = app.main.info[0].value
+            self.assertIn("model estimate, not confirmation", explanation)
+            self.assertIn("Left** and **Stayed", explanation)
+            self.assertIn("at or above the selected threshold", explanation)
+            self.assertIn("must not be used for automated employment decisions", explanation)
             app.multiselect[0].select("Accounting").run()
             self.assertFalse(app.exception)
             self.assertEqual(app.metric[0].value, "64")

@@ -69,7 +69,14 @@ with st.sidebar:
     )
     gender_filter = st.multiselect("Gender", sorted(frame["gender"].unique()), key="gender_filter")
     age_filter = st.multiselect("Age group", sorted(frame["age_group"].unique()), key="age_filter")
-    risk_threshold = st.slider("High-risk threshold", min_value=0.30, max_value=0.80, value=0.50, step=0.05)
+    risk_threshold = st.slider(
+        "High-risk threshold",
+        min_value=0.30,
+        max_value=0.80,
+        value=0.50,
+        step=0.05,
+        help="Records with a predicted risk at or above this value are labelled High risk.",
+    )
 
 filtered = apply_filters(frame, department_filter, gender_filter, age_filter)
 total_employees = len(filtered)
@@ -150,7 +157,13 @@ with risk_right:
         width="stretch",
         hide_index=True,
     )
-st.caption("Risk estimates are shown only for the held-out test set. They support human review and are not evidence that an individual will leave.")
+st.info(
+    "**How to interpret the prediction table:** Predicted risk is a model estimate, not confirmation that an "
+    "employee will leave. **Left** and **Stayed** are the recorded outcomes in the dataset. Records at or above "
+    "the selected threshold are labelled **High risk**. This dashboard supports human review and must not be "
+    "used for automated employment decisions."
+)
+st.caption("Risk estimates are shown only for the held-out test set.")
 
 importance = results["importance"].head(12).sort_values("importance_mean")
 st.plotly_chart(
