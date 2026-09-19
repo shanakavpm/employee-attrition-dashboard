@@ -1,6 +1,8 @@
 {
   "best_model": "Logistic Regression",
-  "selection_metric": "hold-out F1 score",
+  "selection_method": "5-fold, 5-repeat stratified cross-validation on training data",
+  "selection_reason": "Selected from 5-fold, 5-repeat cross-validation on the training data. Its mean F1 was within 0.01 of the strongest candidate, so the more interpretable and maintainable model was preferred.",
+  "holdout_role": "Final evaluation only",
   "records": 1191,
   "features": 33
 }

@@ -81,15 +81,7 @@ def load_and_prepare_data(source_path: Path) -> PreparedData:
     frame = frame.loc[target_values.notna()].copy()
     frame[TARGET_COLUMN] = target_values.loc[target_values.notna()].astype(int)
 
-    missing_before = int(frame.isna().sum().sum())
-    categorical_columns = frame.select_dtypes(include="object").columns
-    frame[categorical_columns] = frame[categorical_columns].fillna("Unknown")
-    numeric_columns = frame.select_dtypes(include="number").columns.drop(
-        TARGET_COLUMN, errors="ignore"
-    )
-    for column in numeric_columns:
-        frame[column] = frame[column].fillna(frame[column].median())
-    missing_after = int(frame.isna().sum().sum())
+    missing_values_retained = int(frame.isna().sum().sum())
 
     if ID_COLUMN not in frame.columns:
         raise ValueError("The source file must include an ID column.")
@@ -100,8 +92,10 @@ def load_and_prepare_data(source_path: Path) -> PreparedData:
             {"check": "Duplicate rows removed", "value": duplicate_count},
             {"check": "Invalid attrition values removed", "value": invalid_target_count},
             {"check": "Inconsistent category labels standardised", "value": category_values_standardised},
-            {"check": "Missing values before treatment", "value": missing_before},
-            {"check": "Missing values after treatment", "value": missing_after},
+            {
+                "check": "Missing predictor values retained for training-pipeline imputation",
+                "value": missing_values_retained,
+            },
             {"check": "Final records", "value": len(frame)},
             {"check": "Final columns", "value": len(frame.columns)},
         ]

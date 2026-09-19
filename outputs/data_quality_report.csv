@@ -3,7 +3,6 @@ Rows loaded,1191
 Duplicate rows removed,0
 Invalid attrition values removed,0
 Inconsistent category labels standardised,35
-Missing values before treatment,0
-Missing values after treatment,0
+Missing predictor values retained for training-pipeline imputation,0
 Final records,1191
 Final columns,35

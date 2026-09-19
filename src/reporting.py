@@ -29,7 +29,10 @@ def _percentage_axis(axis: plt.Axes) -> None:
 
 
 def generate_evidence_figures(
-    frame: pd.DataFrame, result: AnalysisResult, figure_directory: Path
+    frame: pd.DataFrame,
+    result: AnalysisResult,
+    calibration_curve: pd.DataFrame,
+    figure_directory: Path,
 ) -> pd.DataFrame:
     """Generate concise PNG figures used as reproducible assignment evidence."""
     figure_directory.mkdir(parents=True, exist_ok=True)
@@ -63,11 +66,11 @@ def generate_evidence_figures(
 
     model_metrics = result.metrics.set_index("model")[["f1", "roc_auc"]]
     ax = model_metrics.plot(kind="bar", color=["#54A24B", "#B279A2"], figsize=(8, 4))
-    ax.set(title="Hold-out model comparison", xlabel="Model", ylabel="Score", ylim=(0, 1))
+    ax.set(title="Final hold-out model evaluation", xlabel="Model", ylabel="Score", ylim=(0, 1))
     ax.legend(["F1 score", "ROC-AUC"], loc="lower right")
     figure_path = figure_directory / "fig_04_model_comparison.png"
     _save_figure(figure_path)
-    index.append({"file": figure_path.name, "purpose": "Model selection evidence"})
+    index.append({"file": figure_path.name, "purpose": "Final hold-out evaluation; not model selection"})
 
     importance = global_feature_importance(result).head(12).sort_values("importance_mean")
     ax = importance.plot.barh(x="feature", y="importance_mean", xerr="importance_std", legend=False, color="#72B7B2", figsize=(8, 6))
@@ -84,5 +87,28 @@ def generate_evidence_figures(
     figure_path = figure_directory / "fig_06_fairness_by_gender.png"
     _save_figure(figure_path)
     index.append({"file": figure_path.name, "purpose": "Gender-level fairness diagnostic"})
+
+    ax = calibration_curve.plot(
+        x="mean_predicted_risk",
+        y="observed_attrition_rate",
+        marker="o",
+        color="#4C78A8",
+        legend=False,
+        figsize=(6, 5),
+    )
+    ax.plot([0, 1], [0, 1], linestyle="--", color="#777777", label="Ideal calibration")
+    ax.set(
+        title=f"Held-out reliability diagram: {result.best_model_name}",
+        xlabel="Mean predicted risk",
+        ylabel="Observed attrition rate",
+        xlim=(0, 1),
+        ylim=(0, 1),
+    )
+    ax.xaxis.set_major_formatter(lambda value, _: f"{value:.0%}")
+    ax.yaxis.set_major_formatter(lambda value, _: f"{value:.0%}")
+    ax.legend(["Observed by risk bin", "Ideal calibration"], loc="upper left")
+    figure_path = figure_directory / "fig_07_calibration_curve.png"
+    _save_figure(figure_path)
+    index.append({"file": figure_path.name, "purpose": "Held-out probability-calibration evidence"})
 
     return pd.DataFrame(index)

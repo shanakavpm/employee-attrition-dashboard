@@ -1,0 +1,2 @@
+model,holdout_records,brier_score,baseline_brier_score,brier_skill_score,mean_absolute_calibration_gap,calibration_assessment,interpretation
+Logistic Regression,298,0.13692621289794454,0.2454961017010105,0.44224689537145123,0.05010994315429246,Reasonably close,"Calibration is reasonably close on the held-out test set, but each score remains a model estimate rather than a guaranteed probability."

@@ -13,17 +13,18 @@ from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
+    brier_score_loss,
     confusion_matrix,
     f1_score,
     precision_score,
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.model_selection import RepeatedStratifiedKFold, StratifiedKFold, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from src.config import CV_FOLDS, MIN_GROUP_SIZE, RANDOM_STATE, TEST_SIZE
+from src.config import CV_FOLDS, CV_REPEATS, MIN_GROUP_SIZE, RANDOM_STATE, TEST_SIZE
 from src.data import model_features
 
 # Streamlit Community Cloud's current Python 3.14 image can fail inside
@@ -40,8 +41,10 @@ class AnalysisResult:
     models: dict[str, Pipeline]
     metrics: pd.DataFrame
     best_model_name: str
+    selection_reason: str
     x_train: pd.DataFrame
     x_test: pd.DataFrame
+    y_train: pd.Series
     y_test: pd.Series
     probabilities: pd.Series
     predictions: pd.Series
@@ -151,7 +154,10 @@ def _metric_row(name: str, pipeline: Pipeline, x_test: pd.DataFrame, y_test: pd.
 
 
 def _serial_cross_validation(
-    pipeline: Pipeline, features: pd.DataFrame, target: pd.Series, cv: StratifiedKFold
+    pipeline: Pipeline,
+    features: pd.DataFrame,
+    target: pd.Series,
+    cv: StratifiedKFold | RepeatedStratifiedKFold,
 ) -> dict[str, list[float]]:
     """Evaluate folds without joblib, which is more reliable in hosted sessions."""
     scores: dict[str, list[float]] = {"f1": [], "roc_auc": []}
@@ -169,12 +175,44 @@ def _serial_cross_validation(
     return scores
 
 
-def train_and_evaluate(frame: pd.DataFrame, target_column: str) -> AnalysisResult:
-    """Train both models and select the best by hold-out F1 score.
+def _repeated_score_summary(scores: dict[str, list[float]]) -> dict[str, float | int]:
+    """Summarise repeated-fold scores with an empirical 95% percentile interval."""
+    summary: dict[str, float | int] = {"cv_evaluations": len(scores["f1"])}
+    for metric in ("f1", "roc_auc"):
+        values = np.asarray(scores[metric], dtype=float)
+        summary[f"cv_{metric}_mean"] = float(values.mean())
+        summary[f"cv_{metric}_std"] = float(values.std(ddof=1))
+        summary[f"cv_{metric}_p2_5"] = float(np.percentile(values, 2.5))
+        summary[f"cv_{metric}_p97_5"] = float(np.percentile(values, 97.5))
+    return summary
 
-    F1 is explicit because missed leavers and unnecessary retention actions both
-    matter. Cross-validation means and standard deviations show model stability.
-    """
+
+def _select_model(metrics: pd.DataFrame) -> tuple[str, str]:
+    """Select from training-only CV results with a transparent-model preference."""
+    best_mean = float(metrics["cv_f1_mean"].max())
+    comparable = metrics[metrics["cv_f1_mean"] >= best_mean - 0.01]
+    if "Logistic Regression" in comparable["model"].values:
+        selected = "Logistic Regression"
+        reason = (
+            "Selected from 5-fold, 5-repeat cross-validation on the training data. "
+            "Its mean F1 was within 0.01 of the strongest candidate, so the more "
+            "interpretable and maintainable model was preferred."
+        )
+    else:
+        ranked = comparable.sort_values(
+            ["cv_f1_mean", "cv_f1_std", "cv_roc_auc_mean"],
+            ascending=[False, True, False],
+        )
+        selected = str(ranked.iloc[0]["model"])
+        reason = (
+            "Selected from 5-fold, 5-repeat cross-validation on the training data "
+            "using mean F1, stability and ROC-AUC."
+        )
+    return selected, reason
+
+
+def train_and_evaluate(frame: pd.DataFrame, target_column: str) -> AnalysisResult:
+    """Select a model by repeated CV, then evaluate it once on the hold-out set."""
     features = model_features(frame)
     target = frame[target_column]
     x_train, x_test, y_train, y_test = train_test_split(
@@ -185,21 +223,32 @@ def train_and_evaluate(frame: pd.DataFrame, target_column: str) -> AnalysisResul
         stratify=target,
     )
     candidates = build_candidate_models(x_train)
-    cv = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=RANDOM_STATE)
-    rows: list[dict[str, float | str]] = []
+    cv = RepeatedStratifiedKFold(
+        n_splits=CV_FOLDS,
+        n_repeats=CV_REPEATS,
+        random_state=RANDOM_STATE,
+    )
+    cv_rows: list[dict[str, float | str | int]] = []
 
     for name, pipeline in candidates.items():
         cv_result = _serial_cross_validation(pipeline, x_train, y_train, cv)
-        pipeline.fit(x_train, y_train)
-        row = _metric_row(name, pipeline, x_test, y_test)
-        row["cv_f1_mean"] = float(np.mean(cv_result["f1"]))
-        row["cv_f1_std"] = float(np.std(cv_result["f1"], ddof=1))
-        row["cv_roc_auc_mean"] = float(np.mean(cv_result["roc_auc"]))
-        row["cv_roc_auc_std"] = float(np.std(cv_result["roc_auc"], ddof=1))
-        rows.append(row)
+        row: dict[str, float | str | int] = {"model": name}
+        row.update(_repeated_score_summary(cv_result))
+        cv_rows.append(row)
 
-    metrics = pd.DataFrame(rows).sort_values("f1", ascending=False).reset_index(drop=True)
-    best_model_name = str(metrics.iloc[0]["model"])
+    cv_metrics = pd.DataFrame(cv_rows)
+    best_model_name, selection_reason = _select_model(cv_metrics)
+
+    holdout_rows: list[dict[str, float | str]] = []
+    for name, pipeline in candidates.items():
+        pipeline.fit(x_train, y_train)
+        holdout_rows.append(_metric_row(name, pipeline, x_test, y_test))
+    metrics = pd.DataFrame(holdout_rows).merge(cv_metrics, on="model", validate="one_to_one")
+    metrics["selected"] = metrics["model"].eq(best_model_name)
+    metrics = metrics.sort_values(
+        ["selected", "cv_f1_mean", "cv_f1_std"],
+        ascending=[False, False, True],
+    ).reset_index(drop=True)
     best_model = candidates[best_model_name]
     probabilities = pd.Series(best_model.predict_proba(x_test)[:, 1], index=x_test.index, name="attrition_risk")
     predictions = pd.Series(best_model.predict(x_test), index=x_test.index, name="predicted_attrition")
@@ -207,12 +256,76 @@ def train_and_evaluate(frame: pd.DataFrame, target_column: str) -> AnalysisResul
         models=candidates,
         metrics=metrics,
         best_model_name=best_model_name,
+        selection_reason=selection_reason,
         x_train=x_train,
         x_test=x_test,
+        y_train=y_train,
         y_test=y_test,
         probabilities=probabilities,
         predictions=predictions,
     )
+
+
+def calibration_evaluation(result: AnalysisResult, bins: int = 10) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Evaluate uncalibrated hold-out scores without fitting on the hold-out set."""
+    actual = result.y_test.astype(int)
+    predicted_risk = result.probabilities.astype(float)
+    brier = float(brier_score_loss(actual, predicted_risk))
+    training_prevalence = float(result.y_train.mean())
+    baseline_brier = float(np.mean((actual.to_numpy() - training_prevalence) ** 2))
+    brier_skill = 1.0 - (brier / baseline_brier) if baseline_brier else np.nan
+
+    bin_count = min(bins, int(predicted_risk.nunique()))
+    bin_ids = pd.qcut(predicted_risk, q=bin_count, labels=False, duplicates="drop")
+    curve = (
+        pd.DataFrame({"actual": actual, "predicted_risk": predicted_risk, "bin": bin_ids})
+        .groupby("bin", as_index=False, observed=True)
+        .agg(
+            records=("actual", "size"),
+            mean_predicted_risk=("predicted_risk", "mean"),
+            observed_attrition_rate=("actual", "mean"),
+        )
+    )
+    curve["calibration_bin"] = np.arange(1, len(curve) + 1)
+    curve["absolute_gap"] = (
+        curve["mean_predicted_risk"] - curve["observed_attrition_rate"]
+    ).abs()
+    curve = curve[
+        [
+            "calibration_bin",
+            "records",
+            "mean_predicted_risk",
+            "observed_attrition_rate",
+            "absolute_gap",
+        ]
+    ]
+    weighted_gap = float(np.average(curve["absolute_gap"], weights=curve["records"]))
+    weak_calibration = bool(brier_skill <= 0 or weighted_gap > 0.10)
+    if weak_calibration:
+        interpretation = (
+            "Calibration is weak on the held-out test set. Treat the scores as relative risk estimates, "
+            "not literal probabilities."
+        )
+    else:
+        interpretation = (
+            "Calibration is reasonably close on the held-out test set, but each score remains a model "
+            "estimate rather than a guaranteed probability."
+        )
+    metrics = pd.DataFrame(
+        [
+            {
+                "model": result.best_model_name,
+                "holdout_records": len(actual),
+                "brier_score": brier,
+                "baseline_brier_score": baseline_brier,
+                "brier_skill_score": brier_skill,
+                "mean_absolute_calibration_gap": weighted_gap,
+                "calibration_assessment": "Weak" if weak_calibration else "Reasonably close",
+                "interpretation": interpretation,
+            }
+        ]
+    )
+    return metrics, curve
 
 
 def fairness_by_group(result: AnalysisResult, source_frame: pd.DataFrame, group_column: str) -> pd.DataFrame:
