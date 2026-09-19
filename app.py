@@ -6,28 +6,17 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from src.config import PROCESSED_DATA_PATH, RAW_DATA_PATH, TARGET_COLUMN
-from src.data import create_features, load_dashboard_data
-from src.modeling import fairness_by_group, global_feature_importance, train_and_evaluate
+from src.config import OUTPUT_DIR, TARGET_COLUMN
+from src.dashboard_data import load_dashboard_data
 
 
 st.set_page_config(page_title="Employee Attrition Dashboard", page_icon="📊", layout="wide")
 
 
 @st.cache_data
-def get_data() -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Load and cache the raw dataset or deployment-safe processed fallback."""
-    prepared = load_dashboard_data(RAW_DATA_PATH, PROCESSED_DATA_PATH)
-    frame = prepared.frame
-    if "attrition_label" not in frame.columns:
-        frame = create_features(frame)
-    return frame, prepared.quality_report
-
-
-@st.cache_resource
-def get_analysis(frame: pd.DataFrame):
-    """Train models once per dataset revision and cache the analysis result."""
-    return train_and_evaluate(frame, TARGET_COLUMN)
+def get_dashboard_data(version: int) -> dict:
+    """Cache saved results; file modification time invalidates the cache."""
+    return load_dashboard_data(OUTPUT_DIR / "dashboard_data.json")
 
 
 def apply_filters(frame: pd.DataFrame, departments: list[str], genders: list[str], ages: list[str]) -> pd.DataFrame:
@@ -51,16 +40,18 @@ def clear_filters() -> None:
         st.session_state[key] = []
 
 
-def prediction_review_frame(source_frame: pd.DataFrame, result) -> pd.DataFrame:
-    """Join independent test-set predictions to dashboard fields for review."""
-    review_columns = ["id", "department", "jobtitle", "gender", "age_group", "attrition_label"]
-    review = source_frame.loc[result.x_test.index, review_columns].copy()
-    review["attrition_risk"] = result.probabilities
-    return review
+try:
+    results_path = OUTPUT_DIR / "dashboard_data.json"
+    results = get_dashboard_data(results_path.stat().st_mtime_ns)
+except (OSError, ValueError, KeyError, TypeError):
+    st.error("Dashboard results are missing or invalid. Run python run_pipeline.py and deploy outputs/dashboard_data.json with the app.")
+    st.stop()
 
-
-frame, quality_report = get_data()
-analysis = get_analysis(frame)
+frame = results["frame"]
+quality_report = results["quality_report"]
+best_model_name = results["best_model_name"]
+risk_review = results["risk_review"]
+test_record_count = len(risk_review)
 
 st.title("Employee Attrition Dashboard")
 st.caption("Decision-support prototype using the Saudi Employee Attrition Dataset. It does not make automated HR decisions.")
@@ -133,14 +124,13 @@ with factor_right:
     )
 
 st.subheader("Prediction model")
-st.write(f"Selected model: **{analysis.best_model_name}**. The model is selected using hold-out F1 score, which balances missed leavers and false alerts.")
+st.write(f"Selected model: **{best_model_name}**. The model is selected using hold-out F1 score, which balances missed leavers and false alerts.")
 st.dataframe(
-    analysis.metrics.style.format({column: "{:.3f}" for column in analysis.metrics.columns if column != "model"}),
+    results["metrics"].style.format({column: "{:.3f}" for column in results["metrics"].columns if column != "model"}),
     width="stretch",
     hide_index=True,
 )
 
-risk_review = prediction_review_frame(frame, analysis)
 filtered_risk_review = apply_filters(risk_review, department_filter, gender_filter, age_filter)
 filtered_risk_review["risk_category"] = filtered_risk_review["attrition_risk"].ge(risk_threshold).map(
     {True: "High risk", False: "Lower risk"}
@@ -162,24 +152,24 @@ with risk_right:
     )
 st.caption("Risk estimates are shown only for the held-out test set. They support human review and are not evidence that an individual will leave.")
 
-importance = global_feature_importance(analysis).head(12).sort_values("importance_mean")
+importance = results["importance"].head(12).sort_values("importance_mean")
 st.plotly_chart(
     px.bar(importance, x="importance_mean", y="feature", orientation="h", error_x="importance_std", title="Global feature importance", labels={"importance_mean": "Decrease in F1 when shuffled", "feature": "Feature"}),
     width="stretch",
 )
-st.caption(f"Feature importance: {analysis.best_model_name}, evaluated on all {len(analysis.x_test):,} held-out test records, independent of sidebar filters. Permutation importance describes predictive association, not causation.")
+st.caption(f"Feature importance: {best_model_name}, evaluated on all {test_record_count:,} held-out test records, independent of sidebar filters. Permutation importance describes predictive association, not causation.")
 
 st.subheader("Fairness and responsible use")
 st.caption(
-    f"Fairness tables: all {len(analysis.x_test):,} held-out test records, "
-    f"using {analysis.best_model_name} at the model’s default 50% decision threshold. "
+    f"Fairness tables: all {test_record_count:,} held-out test records, "
+    f"using {best_model_name} at the model’s default 50% decision threshold. "
     "Sidebar filters and the high-risk threshold slider do not change these tables."
 )
 fairness_tabs = st.tabs(["Gender", "Age group", "Data quality"])
 with fairness_tabs[0]:
-    st.dataframe(fairness_by_group(analysis, frame, "gender").style.format({"predicted_high_risk_rate": "{:.1%}", "recall": "{:.1%}", "false_positive_rate": "{:.1%}"}), width="stretch", hide_index=True)
+    st.dataframe(results["gender_fairness"].style.format({"predicted_high_risk_rate": "{:.1%}", "recall": "{:.1%}", "false_positive_rate": "{:.1%}"}), width="stretch", hide_index=True)
 with fairness_tabs[1]:
-    st.dataframe(fairness_by_group(analysis, frame, "age_group").style.format({"predicted_high_risk_rate": "{:.1%}", "recall": "{:.1%}", "false_positive_rate": "{:.1%}"}), width="stretch", hide_index=True)
+    st.dataframe(results["age_fairness"].style.format({"predicted_high_risk_rate": "{:.1%}", "recall": "{:.1%}", "false_positive_rate": "{:.1%}"}), width="stretch", hide_index=True)
 with fairness_tabs[2]:
     st.dataframe(quality_report, width="stretch", hide_index=True)
 

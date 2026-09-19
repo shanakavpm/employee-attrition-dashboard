@@ -8,6 +8,7 @@ from src.config import FIGURE_DIR, OUTPUT_DIR, PROCESSED_DATA_PATH, RAW_DATA_PAT
 from src.data import create_features, load_and_prepare_data
 from src.modeling import fairness_by_group, global_feature_importance, preprocessing_ablation, train_and_evaluate
 from src.reporting import generate_evidence_figures
+from src.dashboard_data import save_dashboard_data
 
 
 def main() -> None:
@@ -23,7 +24,8 @@ def main() -> None:
     result = train_and_evaluate(frame, TARGET_COLUMN)
     result.metrics.to_csv(OUTPUT_DIR / "model_metrics.csv", index=False)
     preprocessing_ablation(frame, TARGET_COLUMN).to_csv(OUTPUT_DIR / "preprocessing_ablation.csv", index=False)
-    global_feature_importance(result).to_csv(OUTPUT_DIR / "feature_importance.csv", index=False)
+    importance = global_feature_importance(result)
+    importance.to_csv(OUTPUT_DIR / "feature_importance.csv", index=False)
     fairness_by_group(result, frame, "gender").to_csv(OUTPUT_DIR / "fairness_by_gender.csv", index=False)
     fairness_by_group(result, frame, "age_group").to_csv(OUTPUT_DIR / "fairness_by_age_group.csv", index=False)
     generate_evidence_figures(frame, result, FIGURE_DIR).to_csv(OUTPUT_DIR / "figure_index.csv", index=False)
@@ -39,6 +41,16 @@ def main() -> None:
             output_file,
             indent=2,
         )
+    risk_review = frame.loc[result.x_test.index, ["id", "department", "jobtitle", "gender", "age_group", "attrition_label"]].copy()
+    risk_review["attrition_risk"] = result.probabilities
+    save_dashboard_data(
+        OUTPUT_DIR / "dashboard_data.json",
+        best_model_name=result.best_model_name,
+        frame=frame, quality_report=prepared.quality_report, metrics=result.metrics,
+        risk_review=risk_review, importance=importance,
+        gender_fairness=fairness_by_group(result, frame, "gender"),
+        age_fairness=fairness_by_group(result, frame, "age_group"),
+    )
     print(f"Pipeline complete. Evidence files saved in: {OUTPUT_DIR}")
 
 
