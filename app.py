@@ -29,8 +29,9 @@ def clear_filters() -> None:
 try:
     results_path = OUTPUT_DIR / "dashboard_data.json"
     results = get_dashboard_data(results_path.stat().st_mtime_ns)
-except (OSError, ValueError, KeyError, TypeError):
+except (OSError, ValueError, KeyError, TypeError) as error:
     st.error("Dashboard results are missing or invalid. Run python run_pipeline.py and deploy outputs/dashboard_data.json with the app.")
+    st.caption(f"Loader detail: {type(error).__name__}: {error}")
     st.stop()
 
 frame = results["frame"]
