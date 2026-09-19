@@ -98,7 +98,7 @@ with overview_left:
     stay_leave = filtered["attrition_label"].value_counts().rename_axis("status").reset_index(name="employees")
     st.plotly_chart(
         px.pie(stay_leave, names="status", values="employees", hole=0.55, title="Stayed and left"),
-        width="stretch",
+        use_container_width=True,
     )
 with overview_right:
     department_rate = (
@@ -108,7 +108,7 @@ with overview_right:
     )
     st.plotly_chart(
         px.bar(department_rate, x="department", y=TARGET_COLUMN, title="Attrition rate by department", labels={TARGET_COLUMN: "Attrition rate", "department": "Department"}).update_yaxes(tickformat=".0%"),
-        width="stretch",
+        use_container_width=True,
     )
 
 st.subheader("Attrition factors")
@@ -117,7 +117,7 @@ with factor_left:
     overtime_rate = filtered.groupby("overtime", as_index=False)[TARGET_COLUMN].mean()
     st.plotly_chart(
         px.bar(overtime_rate, x="overtime", y=TARGET_COLUMN, title="Attrition rate by overtime", labels={TARGET_COLUMN: "Attrition rate", "overtime": "Overtime"}).update_yaxes(tickformat=".0%"),
-        width="stretch",
+        use_container_width=True,
     )
 with factor_right:
     satisfaction_rate = (
@@ -127,7 +127,7 @@ with factor_right:
     )
     st.plotly_chart(
         px.bar(satisfaction_rate, x="job_satisfaction", y=TARGET_COLUMN, title="Attrition rate by job satisfaction", labels={TARGET_COLUMN: "Attrition rate", "job_satisfaction": "Job satisfaction"}).update_yaxes(tickformat=".0%"),
-        width="stretch",
+        use_container_width=True,
     )
 
 st.subheader("Prediction model")
@@ -160,15 +160,14 @@ with risk_right:
 st.info(
     "**How to interpret the prediction table:** Predicted risk is a model estimate, not confirmation that an "
     "employee will leave. **Left** and **Stayed** are the recorded outcomes in the dataset. Records at or above "
-    "the selected threshold are labelled **High risk**. This dashboard supports human review and must not be "
-    "used for automated employment decisions."
+    "the selected threshold are labelled **High risk**."
 )
 st.caption("Risk estimates are shown only for the held-out test set.")
 
 importance = results["importance"].head(12).sort_values("importance_mean")
 st.plotly_chart(
     px.bar(importance, x="importance_mean", y="feature", orientation="h", error_x="importance_std", title="Global feature importance", labels={"importance_mean": "Decrease in F1 when shuffled", "feature": "Feature"}),
-    width="stretch",
+    use_container_width=True,
 )
 st.caption(f"Feature importance: {best_model_name}, evaluated on all {test_record_count:,} held-out test records, independent of sidebar filters. Permutation importance describes predictive association, not causation.")
 

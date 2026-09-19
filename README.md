@@ -28,10 +28,12 @@ Original Excel data
 
 ## Setup and run
 
+Run these commands from the repository root. The local setup supports Python 3.9 or newer.
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 python run_pipeline.py
 python -m streamlit run app.py
 ```

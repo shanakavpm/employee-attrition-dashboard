@@ -32,7 +32,6 @@ class DashboardTests(unittest.TestCase):
             self.assertIn("model estimate, not confirmation", explanation)
             self.assertIn("Left** and **Stayed", explanation)
             self.assertIn("at or above the selected threshold", explanation)
-            self.assertIn("must not be used for automated employment decisions", explanation)
             app.multiselect[0].select("Accounting").run()
             self.assertFalse(app.exception)
             self.assertEqual(app.metric[0].value, "64")
